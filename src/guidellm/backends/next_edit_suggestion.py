@@ -17,7 +17,7 @@ from guidellm.schemas import (
 ##### CONFIG #####
 # Those are the information that needs to tweaked if the Next Edit Suggestion service interface changes
 API_ROUTES = {
-    "next_edit_suggestions": "/service/v5/generate/v1",
+    "next_edit_suggestion": "/service/v5/generate/v1",
     "health": "/health",
 }
 OBLIGATORY_REQUEST_FIELDS = ['filepath', 'prefix', 'editable_region_prefix', 'editable_region_suffix', 'suffix', 'history']
@@ -70,7 +70,7 @@ class NextEditSuggestionBackend(Backend):
         if not self._in_process:
             raise RuntimeError("Backend not started up for process.")
 
-        await self._async_client.aclose()  # type: ignore [union-attr]
+        await self._async_client.aclose()
         self._async_client = None
         self._in_process = False
     
@@ -124,7 +124,6 @@ class NextEditSuggestionBackend(Backend):
             raise ValueError(f"Unsupported request type '{request.request_type}'. Supported types: {list(self.api_routes.keys())}")
         
         request_url = f"{self.target}{request_path}"
-        print("Body:", request.arguments.body)
         
         self._validate_request_body(request.arguments.body)
         

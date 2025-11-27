@@ -189,10 +189,6 @@ class GenerativeColumnMapper(DataDependentPreprocessor):
         items = cast("dict[int, dict[str, Any]]", items_raw)
         mapped: dict[str, Any] = defaultdict(list)
 
-        # Preserve the original row data from the first dataset as source_data
-        if items and 0 in items:
-            mapped["_source_data"] = [items[0]]
-
         for column_type, column_mappings in self.datasets_column_mappings.items():
             for (
                 dataset_index,

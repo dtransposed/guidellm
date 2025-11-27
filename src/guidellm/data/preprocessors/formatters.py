@@ -411,10 +411,9 @@ class NextEditSuggestionRequestFormatter(GenerativeTextCompletionsRequestFormatt
         :param columns: A dict of GenerativeDatasetColumnType to Any
         """
         arguments: GenerationRequestArguments = GenerationRequestArguments()
-        arguments.body = {}
+        arguments.body = columns
         input_metrics = UsageMetrics()
         output_metrics = UsageMetrics()
-
         arguments.model_combine(columns)
         
         if self.max_tokens is not None:
@@ -423,7 +422,7 @@ class NextEditSuggestionRequestFormatter(GenerativeTextCompletionsRequestFormatt
         # Apply extra arguments
         if self.extras:
             arguments.model_combine(self.extras)
-
+            
         return GenerationRequest(
             request_type="next_edit_suggestion",
             arguments=arguments,
