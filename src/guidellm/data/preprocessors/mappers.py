@@ -172,11 +172,21 @@ class GenerativeColumnMapper(DataDependentPreprocessor):
             raise ValueError("DefaultGenerativeColumnMapper not setup with data.")
 
         items_raw = row.pop("items")
-        # items can be either a list [dict, ...] or a dict {0: dict, 1: dict, ...}
+        
+        ##### Processing JBAI dumps file #####
         if isinstance(items_raw, list):
-            items = {i: item for i, item in enumerate(items_raw)}
-        else:
-            items = cast("dict[int, dict[str, Any]]", items_raw)
+            if len(items_raw) != 1:
+                raise ValueError(f"Single row of dump data expected to be a list of length 1, got {len(items_raw)}")
+            items = items_raw[0]
+            if not isinstance(items, dict):
+                raise ValueError(f"Single row of dump data expected to be a dictionary, got {type(items)}")
+            if "request" not in items:
+                raise ValueError(f"Single row of dump data expected to contain a 'request' key, got {items.keys()}")
+            request = cast("dict[str, Any]", items["request"])
+            return request
+        #####################################
+        
+        items = cast("dict[int, dict[str, Any]]", items_raw)
         mapped: dict[str, Any] = defaultdict(list)
 
         # Preserve the original row data from the first dataset as source_data

@@ -9,7 +9,6 @@ and convert them into standardized GenerationResponse objects.
 
 from __future__ import annotations
 
-import sys
 from typing import Any, Protocol, cast
 
 from guidellm.schemas import GenerationRequest, GenerationResponse, UsageMetrics
@@ -21,6 +20,7 @@ __all__ = [
     "GenerationResponseHandler",
     "GenerationResponseHandlerFactory",
     "TextCompletionsResponseHandler",
+    "NESTextCompletionsResponseHandler",
 ]
 
 
@@ -163,20 +163,13 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
         :param line: Raw SSE line from the streaming response
         :return: 1 if text content was extracted, 0 if line ignored, None if done
         """
-        if line == "data: end":
-            return None
         if not (data := self.extract_line_data(line)):
             return None if data is None else 0
 
         if "id" in data and self.streaming_response_id is None:
             self.streaming_response_id = data["id"]
-            
 
         updated = False
-        if "token" in data:
-            self.streaming_texts.append(data["token"])
-            updated = True
-            return 1 if updated else 0
         choices, usage = self.extract_choices_and_usage(data)
         choice = choices[0] if choices else {}
 
@@ -197,9 +190,6 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
         :return: Standardized GenerationResponse with concatenated text and metrics
         """
         text = "".join(self.streaming_texts) 
-        # TODO implement useful self.extract_metrics function
-        # TODO request args are wrong
-        
         input_metrics, output_metrics = self.extract_metrics(self.streaming_usage, text)
 
         return GenerationResponse(
@@ -288,6 +278,39 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
             audio_tokens=output_details.get("audio_tokens"),
             audio_seconds=output_details.get("seconds"),
         )
+        
+@GenerationResponseHandlerFactory.register("next_edit_suggestion")
+class NESTextCompletionsResponseHandler(TextCompletionsResponseHandler):
+    """
+    Response handler for Next Edit Suggestion text completion endpoints.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def add_streaming_line(self, line: str, end_of_stream_line: str) -> int | None:
+        """
+        Process a single line from a Next Edit Suggestion text completion streaming response.
+        
+        :param line: Raw SSE line from the streaming response
+        :param end_of_stream_line: The line that indicates the end of the streaming response
+        :return: 1 if text content was extracted, 0 if line ignored, None if done
+        """
+        if line == end_of_stream_line:
+            # The end of the streaming response
+            return None
+        
+        data = self.extract_line_data(line)
+        match data:
+            case dict() if not data:
+                # This is how the Next Edit Suggestion service signals the empty line that is to be ignored
+                return 0
+            case dict() if "token" not in data or "event_type" not in data:
+                raise ValueError(f"Invalid data: {data}. The non-empty dictionary must have a 'token' and 'event_type' key")
+            case dict() if "token" in data and "event_type" in data:
+                self.streaming_texts.append(data["token"])
+                return 1
+            case _:
+                raise ValueError(f"Invalid data: {data}. It can be an empty dictionary or a dictionary with a 'token' and 'event_type' key")
 
 
 @GenerationResponseHandlerFactory.register("chat_completions")

@@ -29,6 +29,7 @@ GenerativeRequestType = Literal[
     "chat_completions",
     "audio_transcriptions",
     "audio_translations",
+    "next_edit_suggestion",
 ]
 
 
@@ -224,8 +225,4 @@ class GenerationRequest(StandardBaseModel):
     output_metrics: UsageMetrics = Field(
         default_factory=UsageMetrics,
         description="Output statistics including counts, sizes, and durations.",
-    )
-    source_data: dict[str, Any] | None = Field(
-        default=None,
-        description="Original source data from the dataset file, preserving the complete JSON object.",
     )
