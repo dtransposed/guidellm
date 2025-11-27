@@ -171,8 +171,17 @@ class GenerativeColumnMapper(DataDependentPreprocessor):
         if self.datasets_column_mappings is None:
             raise ValueError("DefaultGenerativeColumnMapper not setup with data.")
 
-        items = cast("dict[int, dict[str, Any]]", row.pop("items"))
+        items_raw = row.pop("items")
+        # items can be either a list [dict, ...] or a dict {0: dict, 1: dict, ...}
+        if isinstance(items_raw, list):
+            items = {i: item for i, item in enumerate(items_raw)}
+        else:
+            items = cast("dict[int, dict[str, Any]]", items_raw)
         mapped: dict[str, Any] = defaultdict(list)
+
+        # Preserve the original row data from the first dataset as source_data
+        if items and 0 in items:
+            mapped["_source_data"] = [items[0]]
 
         for column_type, column_mappings in self.datasets_column_mappings.items():
             for (

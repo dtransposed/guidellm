@@ -225,3 +225,7 @@ class GenerationRequest(StandardBaseModel):
         default_factory=UsageMetrics,
         description="Output statistics including counts, sizes, and durations.",
     )
+    source_data: dict[str, Any] | None = Field(
+        default=None,
+        description="Original source data from the dataset file, preserving the complete JSON object.",
+    )

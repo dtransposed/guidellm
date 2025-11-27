@@ -5,20 +5,22 @@ import time
 from collections.abc import AsyncIterator
 from typing import Optional, Any
 
+from guidellm.backends.response_handlers import GenerationResponseHandlerFactory
 import httpx
-
+import asyncio
+import json
 from guidellm.backends.backend import Backend
 from guidellm.schemas import (
     GenerationRequest,
     GenerationResponse,
     RequestInfo,
-    UsageMetrics,
 )
 
 API_ROUTES = {
     "text_completions": "/service/v5/generate/v1",
     "health": "/health",
 }
+EXPECTED_REQUEST_FIELDS = ['filepath', 'prefix', 'editable_region_prefix', 'editable_region_suffix', 'suffix', 'history']
 
 
 
@@ -79,91 +81,55 @@ class NextEditSuggestionBackend(Backend):
             )
         
         request_url = f"{self.target}{request_path}"
+        # Ignore request.arguments.body and use request.source_data instead
+        request_body = request.source_data['request']
         
-        print("Request URL: ", request_url)
-        print("Request Body: ", request.arguments.body)
-        print("Request Params: ", request.arguments.params)
-        print("Request Headers: ", request.arguments.headers)
-        print("Request Method: ", request.arguments.method)
-        print("Request Type: ", request.request_type)
-        print("Request ID: ", request.request_id)
-        print("Request Args: ", request.arguments.model_dump())
-        print("Request Info: ", request_info)
-        print("History: ", history)
+        if not all(key in request_body for key in EXPECTED_REQUEST_FIELDS):
+            raise ValueError(f"Request body is missing expected fields: {EXPECTED_REQUEST_FIELDS}")
+        
+        response_handler = GenerationResponseHandlerFactory.create(request.request_type)
 
-        # Make the API request
         request_info.timings.request_start = time.time()
         try:
-            # Create a copy of the body and remove stream-related keys (hack)
-            request_body = dict(request.arguments.body) if request.arguments.body else {}
-            request_body.pop('stream', None)
-            request_body.pop('stream_options', None)
-            
-            print("Request method: ", request.arguments.method)
-            print("Request url: ", request_url)
-            print("Request params: ", request.arguments.params)
-            print("Request headers: ", request.arguments.headers)
-            print("Request body: ", request_body)
-            
-            response = await self._async_client.request(
+            print("DEBUG: About to enter async with")
+            async with self._async_client.stream(
                 request.arguments.method or "POST",
                 request_url,
                 params=request.arguments.params,
                 headers=request.arguments.headers,
                 json=request_body,
-            )
-            request_info.timings.request_end = time.time()
-            
-            # Log response details for debugging
-            print(f"Response Status: {response.status_code}")
-            print(f"Response Headers: {dict(response.headers)}")
-            
-            response.raise_for_status()
-            
-            # Parse response and yield
-            try:
-                data = response.json()
-            except Exception as e:
-                print(f"Failed to parse JSON response: {e}")
-                print(f"Response text: {response.text[:500]}")  # First 500 chars
-                raise
-                
-        except httpx.HTTPStatusError as e:
-            request_info.timings.request_end = time.time()
-            print(f"HTTP Error {e.response.status_code}: {e.response.text[:500]}")
-            raise
-        except httpx.RequestError as e:
-            request_info.timings.request_end = time.time()
-            print(f"Request Error: {e}")
-            raise
+            ) as stream:
+                print("DEBUG: Inside async with, calling raise_for_status")
+                stream.raise_for_status()
+                print("DEBUG: Starting async for loop")
+                end_reached = False
+                async for chunk in stream.aiter_lines():
+                    iter_time = time.time()
+
+                    if request_info.timings.first_request_iteration is None:
+                        request_info.timings.first_request_iteration = iter_time
+                    request_info.timings.last_request_iteration = iter_time
+                    request_info.timings.request_iterations += 1
+                    
+                    iterations = response_handler.add_streaming_line(chunk)
+                    print("Iterations: ", iterations)
+                    if iterations is None or iterations <= 0 or end_reached:
+                        end_reached = end_reached or iterations is None
+                        continue
+
+                    if request_info.timings.first_token_iteration is None:
+                        request_info.timings.first_token_iteration = iter_time
+                        request_info.timings.token_iterations = 0
+
+                    request_info.timings.last_token_iteration = iter_time
+                    request_info.timings.token_iterations += iterations
+                print("DEBUG: Async for loop completed")
+            print("DEBUG: Exited async with block")
         except Exception as e:
-            request_info.timings.request_end = time.time()
-            print(f"Unexpected error: {type(e).__name__}: {e}")
+            print(f"DEBUG: Exception caught: {type(e).__name__}: {e}")
             raise
-        
-        # Extract text from response (adjust based on actual API format)
-        text = data.get("text") or data.get("content") or ""
-        
-        # Extract usage metrics if available
-        usage = data.get("usage", {})
-        input_metrics = UsageMetrics(
-            text_tokens=usage.get("prompt_tokens") or usage.get("input_tokens") or 0,
-        )
-        output_metrics = UsageMetrics(
-            text_tokens=usage.get("completion_tokens") or usage.get("output_tokens") or 0,
-            text_words=len(text.split()) if text else 0,
-            text_characters=len(text) if text else 0,
-        )
-        
-        generation_response = GenerationResponse(
-            request_id=request.request_id,
-            request_args=str(
-                request.arguments.model_dump() if request.arguments else None
-            ),
-            response_id=data.get("id"),
-            text=text,
-            input_metrics=input_metrics,
-            output_metrics=output_metrics,
-        )
-        
-        yield generation_response, request_info
+        finally:
+            # Always set request_end timing, even if an exception occurred
+            print("DEBUG: In finally block")
+            request_info.timings.request_end = time.time()
+        yield response_handler.compile_streaming(request), request_info

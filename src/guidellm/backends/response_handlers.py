@@ -9,6 +9,7 @@ and convert them into standardized GenerationResponse objects.
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Protocol, cast
 
 from guidellm.schemas import GenerationRequest, GenerationResponse, UsageMetrics
@@ -162,13 +163,20 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
         :param line: Raw SSE line from the streaming response
         :return: 1 if text content was extracted, 0 if line ignored, None if done
         """
+        if line == "data: end":
+            return None
         if not (data := self.extract_line_data(line)):
             return None if data is None else 0
 
         if "id" in data and self.streaming_response_id is None:
             self.streaming_response_id = data["id"]
+            
 
         updated = False
+        if "token" in data:
+            self.streaming_texts.append(data["token"])
+            updated = True
+            return 1 if updated else 0
         choices, usage = self.extract_choices_and_usage(data)
         choice = choices[0] if choices else {}
 
@@ -188,7 +196,10 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
         :param request: Original generation request
         :return: Standardized GenerationResponse with concatenated text and metrics
         """
-        text = "".join(self.streaming_texts)
+        text = "".join(self.streaming_texts) 
+        # TODO implement useful self.extract_metrics function
+        # TODO request args are wrong
+        
         input_metrics, output_metrics = self.extract_metrics(self.streaming_usage, text)
 
         return GenerationResponse(

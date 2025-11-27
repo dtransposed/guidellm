@@ -107,11 +107,17 @@ class GenerativeTextCompletionsRequestFormatter(RequestFormatter):
             arguments.body["prompt"] = prompt
             input_metrics.add_text_metrics(prompt)
 
+        # Extract source_data if present
+        source_data = None
+        if "_source_data" in columns and columns["_source_data"]:
+            source_data = columns["_source_data"][0]
+
         return GenerationRequest(
             request_type="text_completions",
             arguments=arguments,
             input_metrics=input_metrics,
             output_metrics=output_metrics,
+            source_data=source_data,
         )
 
 
