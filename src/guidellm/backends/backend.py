@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-BackendType = Literal["openai_http"]
+BackendType = Literal["openai_http", "next_edit_suggestion"]
 
 
 class Backend(
