@@ -107,7 +107,6 @@ class GenerativeTextCompletionsRequestFormatter(RequestFormatter):
             arguments.body["prompt"] = prompt
             input_metrics.add_text_metrics(prompt)
 
-
         return GenerationRequest(
             request_type="text_completions",
             arguments=arguments,
@@ -426,7 +425,7 @@ class NextEditSuggestionRequestFormatter(GenerativeTextCompletionsRequestFormatt
             arguments.model_combine(self.extras)
 
         return GenerationRequest(
-            request_type="text_completions",
+            request_type="next_edit_suggestion",
             arguments=arguments,
             input_metrics=input_metrics,
             output_metrics=output_metrics,

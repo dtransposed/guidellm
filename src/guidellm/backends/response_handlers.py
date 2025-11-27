@@ -189,7 +189,7 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
         :param request: Original generation request
         :return: Standardized GenerationResponse with concatenated text and metrics
         """
-        text = "".join(self.streaming_texts) 
+        text = "".join(self.streaming_texts)
         input_metrics, output_metrics = self.extract_metrics(self.streaming_usage, text)
 
         return GenerationResponse(
