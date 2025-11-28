@@ -29,6 +29,7 @@ GenerativeRequestType = Literal[
     "chat_completions",
     "audio_transcriptions",
     "audio_translations",
+    "next_edit_suggestion",
 ]
 
 

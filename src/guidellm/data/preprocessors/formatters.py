@@ -402,3 +402,30 @@ class GenerativeAudioTranslationRequestFormatter(
         result = super().__call__(columns)
         result.request_type = "audio_translations"
         return result
+
+@PreprocessorRegistry.register("next_edit_suggestion")
+class NextEditSuggestionRequestFormatter(GenerativeTextCompletionsRequestFormatter):
+    
+    def __call__(self, columns: dict[str, list[Any]]) -> GenerationRequest:
+        """
+        :param columns: A dict of GenerativeDatasetColumnType to Any
+        """
+        arguments: GenerationRequestArguments = GenerationRequestArguments()
+        arguments.body = columns
+        input_metrics = UsageMetrics()
+        output_metrics = UsageMetrics()
+        arguments.model_combine(columns)
+        
+        if self.max_tokens is not None:
+            raise ValueError("max_tokens is not supported for next_edit_suggestion. Set it to None.")
+
+        # Apply extra arguments
+        if self.extras:
+            arguments.model_combine(self.extras)
+            
+        return GenerationRequest(
+            request_type="next_edit_suggestion",
+            arguments=arguments,
+            input_metrics=input_metrics,
+            output_metrics=output_metrics,
+        )

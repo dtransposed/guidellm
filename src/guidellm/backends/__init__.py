@@ -12,6 +12,7 @@ handlers for processing streaming and non-streaming API responses.
 from __future__ import annotations
 
 from .backend import Backend, BackendType
+from .next_edit_suggestion import NextEditSuggestionBackend
 from .openai import OpenAIHTTPBackend
 from .response_handlers import (
     AudioResponseHandler,
@@ -28,6 +29,7 @@ __all__ = [
     "ChatCompletionsResponseHandler",
     "GenerationResponseHandler",
     "GenerationResponseHandlerFactory",
+    "NextEditSuggestionBackend",
     "OpenAIHTTPBackend",
     "TextCompletionsResponseHandler",
 ]
