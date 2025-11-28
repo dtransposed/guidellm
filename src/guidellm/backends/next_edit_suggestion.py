@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from enum import Enum
 import time
 from collections.abc import AsyncIterator
 from typing import Optional, Any
@@ -22,6 +24,16 @@ API_ROUTES = {
 }
 OBLIGATORY_REQUEST_FIELDS = ['filepath', 'prefix', 'editable_region_prefix', 'editable_region_suffix', 'suffix', 'history']
 OPTIONAL_REQUEST_FIELDS = ['max_length', 'temperature', 'seed', 'top_p', 'top_k']
+
+class NextEditSuggestionResponseFields(Enum):
+    """
+    Enum for the mandatory response fields in the Next Edit Suggestion service.
+    """
+    TOKEN = "token"
+    EVENT_TYPE = "event_type"
+    NUM_GENERATED_TOKENS = "num_generated_tokens"
+    NUM_INPUT_TOKENS = "num_input_tokens"
+    
 END_OF_STREAM_LINE = "data: end"
 ##################
 
@@ -129,10 +141,9 @@ class NextEditSuggestionBackend(Backend):
         
         response_handler: NESTextCompletionsResponseHandler = GenerationResponseHandlerFactory.create(request.request_type)
 
-        request_info.timings.request_start = time.time()
-        
-        # Here is where we actually collect the streaming response from the Next Edit Suggestion service
         try:
+            request_info.timings.request_start = time.time()
+
             async with self._async_client.stream(
                 request.arguments.method or "POST",
                 request_url,
@@ -142,6 +153,7 @@ class NextEditSuggestionBackend(Backend):
             ) as stream:
                 stream.raise_for_status()
                 end_reached = False
+
                 async for chunk in stream.aiter_lines():
                     iter_time = time.time()
 
@@ -149,8 +161,7 @@ class NextEditSuggestionBackend(Backend):
                         request_info.timings.first_request_iteration = iter_time
                     request_info.timings.last_request_iteration = iter_time
                     request_info.timings.request_iterations += 1
-                    
-                    iterations = response_handler.add_streaming_line(chunk, end_of_stream_line=END_OF_STREAM_LINE)
+                    iterations = response_handler.add_streaming_line(chunk, end_of_stream_line=END_OF_STREAM_LINE, mandatory_response_fields=NextEditSuggestionResponseFields)
                     if iterations is None or iterations <= 0 or end_reached:
                         end_reached = end_reached or iterations is None
                         continue
@@ -161,11 +172,28 @@ class NextEditSuggestionBackend(Backend):
 
                     request_info.timings.last_token_iteration = iter_time
                     request_info.timings.token_iterations += iterations
-        except Exception as e:
-            raise RuntimeError(f"Error processing streaming response from Next Edit Suggestion service: {e}") from e
-        finally:
+
             request_info.timings.request_end = time.time()
-        yield response_handler.compile_streaming(request), request_info
+            yield response_handler.compile_streaming(request), request_info
+        except asyncio.CancelledError as err:
+            # Yield current result to store iterative results before propagating
+            request_info.timings.request_end = time.time()
+            yield response_handler.compile_streaming(request), request_info
+            raise err
+        except httpx.HTTPStatusError as err:
+            error_msg = f"HTTP error from Next Edit Suggestion service"
+            if err.response is not None:
+                try:
+                    error_body = err.response.json()
+                    error_msg += f": {error_body}"
+                except Exception:
+                    error_msg += f": {err.response.status_code} {err.response.text}"
+            raise RuntimeError(error_msg) from err
+        except httpx.RequestError as err:
+            # Network/connection errors
+            raise RuntimeError(
+                f"Request error connecting to Next Edit Suggestion service at {request_url}: {err}"
+            ) from err
         
     def _validate_request_body(self, request_body: dict):
         """
