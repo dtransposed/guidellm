@@ -9,7 +9,8 @@ and convert them into standardized GenerationResponse objects.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from enum import Enum
+from typing import Any, Protocol, Type, cast
 
 from guidellm.schemas import GenerationRequest, GenerationResponse, UsageMetrics
 from guidellm.utils import RegistryMixin, json
@@ -20,6 +21,7 @@ __all__ = [
     "GenerationResponseHandler",
     "GenerationResponseHandlerFactory",
     "TextCompletionsResponseHandler",
+    "NESTextCompletionsResponseHandler",
 ]
 
 
@@ -277,6 +279,48 @@ class TextCompletionsResponseHandler(GenerationResponseHandler):
             audio_tokens=output_details.get("audio_tokens"),
             audio_seconds=output_details.get("seconds"),
         )
+        
+@GenerationResponseHandlerFactory.register("next_edit_suggestion")
+class NESTextCompletionsResponseHandler(TextCompletionsResponseHandler):
+    """
+    Response handler for Next Edit Suggestion text completion endpoints.
+    """
+    def __init__(self):
+        super().__init__()
+        self.streaming_usage = {"completion_tokens": 0, "prompt_tokens": None}
+
+    def add_streaming_line(self, line: str, end_of_stream_line: str, mandatory_response_fields: Type[Enum]) -> int | None:
+        """
+        Process a single line from a Next Edit Suggestion text completion streaming response.
+        
+        :param line: Raw SSE line from the streaming response
+        :param end_of_stream_line: The line that indicates the end of the streaming response
+        :param mandatory_response_fields: The fields that are mandatory in the response
+        :return: 1 if text content was extracted, 0 if line ignored, None if done
+        """
+        mandatory_fields = [field.value for field in mandatory_response_fields]
+        if line == end_of_stream_line:
+            # The end of the streaming response
+            return None
+        
+        data = self.extract_line_data(line)
+        match data:
+            case dict() if not data:
+                # This is how the Next Edit Suggestion service signals the empty line that is to be ignored
+                return 0
+            case dict() if not all(field in data for field in mandatory_fields): 
+                raise ValueError(f"Invalid data: {data}. The non-empty dictionary must have keys: {mandatory_fields}; got: {data.keys()}")
+            case dict() if all(field in data for field in mandatory_fields):
+                self.streaming_texts.append(data[mandatory_response_fields.TOKEN.value])
+                self.streaming_usage["completion_tokens"] += data[mandatory_response_fields.NUM_GENERATED_TOKENS.value]
+                
+                if self.streaming_usage["prompt_tokens"] is None:
+                    self.streaming_usage["prompt_tokens"] = data[mandatory_response_fields.NUM_INPUT_TOKENS.value]
+                elif self.streaming_usage["prompt_tokens"] != data[mandatory_response_fields.NUM_INPUT_TOKENS.value]:
+                    raise ValueError("The number of prompt tokens is not consistent.")
+                return 1
+            case _:
+                raise ValueError(f"Invalid data: {data}. It can be an empty dictionary or a dictionary with the keys: {mandatory_fields}")
 
 
 @GenerationResponseHandlerFactory.register("chat_completions")
